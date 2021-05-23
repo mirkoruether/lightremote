@@ -5,7 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
-const char* hue_root_ca= \
+static const char* hue_root_ca = \
     "-----BEGIN CERTIFICATE-----\n" \
     "MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\n" \
     "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n" \
@@ -32,21 +32,31 @@ const char* hue_root_ca= \
 String getHueIp() {
     WiFiClientSecure wificlient;
     wificlient.setCACert(hue_root_ca);
-    const char server[] = "discovery.meethue.com";
-    auto client = HttpClient(wificlient, server, 443);
-    client.get("/");
-    
-    int statusCode = client.responseStatusCode();
-    Serial.print("GET https://discovery.meethue.com/ returned code ");
-    Serial.println(statusCode);
-    
-    String response = client.responseBody();
-    Serial.println(response);
 
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, response);
+    Serial.print("GET https://discovery.meethue.com/ ... ");
+    auto client = HttpClient(wificlient, "discovery.meethue.com", 443);
+    int err = client.get("/");
 
-    return doc[0]["internalipaddress"];
+    if(err == HTTP_SUCCESS)
+    {
+        int statusCode = client.responseStatusCode();
+        Serial.print("Sucess, HTTP-Status code: ");
+        Serial.println(statusCode);
+        
+        String response = client.responseBody();
+        Serial.println(response);
+
+        DynamicJsonDocument doc(1024);
+        deserializeJson(doc, response);
+
+        return doc[0]["internalipaddress"];
+    }
+    else
+    {
+        Serial.print("Failed, Error code: ");
+        Serial.println(err);
+        return "";
+    }
 }
 
 #endif
