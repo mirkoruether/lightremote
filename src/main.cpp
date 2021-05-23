@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
+#include "huedetect.h"
 #include "secret.h"
 
 #define CONNECT_TIMEOUT_MS 30000
@@ -50,11 +51,14 @@ void connectToWiFi() {
 }
 
 void setup() {
-    Serial.begin(9600);
+    Serial.begin(115200);
     M5.begin();
     M5.IMU.Init();
 
     connectToWiFi();
+
+    auto hueip = getHueIp();
+    Serial.println(hueip);
 
     M5.Lcd.setRotation(3);
     M5.Lcd.fillScreen(BLACK);
