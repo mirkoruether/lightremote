@@ -3,9 +3,10 @@
 
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <ESP32Ping.h>
 #include <ArduinoJson.h>
 
-static const char* hue_root_ca = \
+static const char* HUE_ROOT_CA = \
     "-----BEGIN CERTIFICATE-----\n" \
     "MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\n" \
     "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n" \
@@ -28,6 +29,8 @@ static const char* hue_root_ca = \
     "YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk\n" \
     "CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=\n" \
     "-----END CERTIFICATE-----\n";
+
+static const StaticJsonDocument<256> EMPTY_DOC;
 
 class AutoHue {
 private:
@@ -66,15 +69,28 @@ public:
         return _client;
     }
 
-    DynamicJsonDocument huerequest(const char* aURLPath, const char* aHttpMethod, const JsonDocument& body) {
+    DynamicJsonDocument hueRequestWithUser(const char* aURLPath, const char* aHttpMethod, const JsonDocument* body, int jsonSize=1024) {
+        String path = String("/api/") + String(getUser()) + String(aURLPath);
+        return hueRequestRaw(path.c_str(), aHttpMethod, body, jsonSize);
+    }
+
+    DynamicJsonDocument hueRequestRaw(const char* aURLPath, const char* aHttpMethod, const JsonDocument* body, int jsonSize=1024) {
         String bodystr;
-        serializeJson(body, bodystr);
+        if(body == nullptr || body->isNull()) {
+            bodystr = "{}";
+        }
+        else {
+            serializeJson(*body, bodystr);
+        }
+
         auto cl = client();
         Serial.print(aHttpMethod);
         Serial.print(" ");
         Serial.print("http://");
         Serial.print(_ip);
         Serial.print(aURLPath);
+        Serial.print(" Body=");
+        Serial.print(bodystr);
         Serial.print(" ... ");
         int err = cl->startRequest(aURLPath, aHttpMethod, "application/json", bodystr.length(), (const byte*)bodystr.c_str());
         if(err == HTTP_SUCCESS) {
@@ -85,14 +101,14 @@ public:
             String responsestr = cl->responseBody();
             Serial.println(responsestr);
 
-            DynamicJsonDocument response(1024);
+            DynamicJsonDocument response(jsonSize);
             deserializeJson(response, responsestr);
             return response;
         }
         else {
             Serial.print("Failed, Error code: ");
             Serial.println(err);
-            DynamicJsonDocument response(1024);
+            DynamicJsonDocument response(jsonSize);
             response["error"] = err;
             return response;
         }
@@ -100,7 +116,7 @@ public:
 
     bool detectHueIp() {
         WiFiClientSecure wifi_secure;
-        wifi_secure.setCACert(hue_root_ca);
+        wifi_secure.setCACert(HUE_ROOT_CA);
 
         Serial.print("GET https://discovery.meethue.com/ ... ");
         auto client = HttpClient(wifi_secure, "discovery.meethue.com", 443);
@@ -117,8 +133,22 @@ public:
             DynamicJsonDocument doc(1024);
             deserializeJson(doc, response);
 
-            setIp(doc[0]["internalipaddress"]);
-            return true;
+            auto arr = doc.as<JsonArray>();
+            for (JsonVariant val : arr) {
+                String ip = val["internalipaddress"];
+                Serial.print("Ping ");
+                Serial.print(ip);
+                Serial.print(" ... ");
+                if (Ping.ping(ip.c_str())) {
+                    Serial.println("Success!");
+                    setIp(ip);
+                    return true;
+                }
+                else {
+                    Serial.println("Failed!");
+                }
+            }
+            return false;
         }
         else {
             Serial.print("Failed, Error code: ");
@@ -130,15 +160,31 @@ public:
     bool requestNewUser(const String& devicetype = "esp32-autohue") {
         StaticJsonDocument<200> doc;
         doc["devicetype"] = devicetype;
-        auto res = huerequest("/api", HTTP_METHOD_POST, doc);
+        auto res = hueRequestRaw("/api", HTTP_METHOD_POST, &doc);
         if(res[0].containsKey("success")) {
             setUser(res[0]["success"]["username"]);
             return true;
         }
         else {
-            delay(1000);
+            delay(2000);
             return false;
         }
+    }
+
+    bool isValidUser() {
+        auto doc = hueRequestWithUser("/groups", HTTP_METHOD_GET, nullptr, 65536);
+        if(doc.is<JsonArray>() || doc.is<JsonArrayConst>()) {
+            if(doc[0].containsKey("error")) {
+                if (doc[0]["error"]["type"] == 1) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    bool setGroupColorTemperature(const char* groupId, bool on, int bri, int ct) {
+        return false;
     }
 };
 

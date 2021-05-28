@@ -12,6 +12,7 @@
 
 Preferences preferences;
 AutoHue hue;
+OneButton btn;
 
 // connectToWiFi adapted from ESP32 example code. See, e.g.:
 // https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/examples/WiFiClient/WiFiClient.ino
@@ -52,8 +53,27 @@ void setup() {
     hue.detectHueIp();
     Serial.println(hue.getIp());
 
-    while(!hue.requestNewUser());
-    Serial.println(hue.getUser());
+    String user = preferences.getString("hue-user", "defaultuser");
+    Serial.print("Stored user: ");
+    Serial.println(user);
+    hue.setUser(user);
+
+    if(!hue.isValidUser()) {
+        Serial.println("User invalid. Requesting a new one. Please press the button on your hue bridge");
+        while(!hue.requestNewUser());
+        Serial.print("New user: ");
+        Serial.print(hue.getUser());
+        if(hue.isValidUser()) {
+            Serial.println(" is valid user!");
+        }
+        else {
+            Serial.println(" is NOT a valid user!");
+        }
+        preferences.putString("hue-user", hue.getUser());
+    }
+    else {
+        Serial.println("User valid.");
+    }
 
     M5.Lcd.setRotation(3);
     M5.Lcd.fillScreen(BLACK);
@@ -69,6 +89,7 @@ void setup() {
 float temp = 0;
 
 void loop() {
+    btn.tick(M5.BtnA.read());
     float pitch = 0.0F;
     float roll  = 0.0F;
     float yaw   = 0.0F;
